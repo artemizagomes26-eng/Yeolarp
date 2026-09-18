@@ -991,6 +991,474 @@ tabContainer.Size = UDim2.new(1, -20, 0, 40)
 tabContainer.Position = UDim2.new(0, 10, 0, 50)
 tabContainer.BackgroundTransparency = 1
 tabContainer.ScrollBarThickness = 0
+tabContainer.Canvart = 999999999
+    lighting.FogEnd = 999999999
+    if lighting:FindFirstChild("Atmosphere") then
+        local atm = lighting.Atmosphere
+        atm.Density = 0
+        atm.Offset = 0
+        atm.Haze = 0
+        atm.Glare = 0
+    end
+    for _, v in pairs(lighting:GetDescendants()) do
+        if v:IsA("Atmosphere") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or
+           v:IsA("SunRaysEffect") or v:IsA("DepthOfFieldEffect") or v:IsA("ColorCorrectionEffect") then
+            if v:IsA("Atmosphere") then
+                v.Density = 0
+                v.Haze = 0
+            else
+                v.Enabled = false
+            end
+        end
+    end
+end
+local function restoreLighting()
+    lighting.ClockTime = 12
+    lighting.Brightness = 1
+    lighting.Ambient = Color3.fromRGB(127,127,127)
+    lighting.OutdoorAmbient = Color3.fromRGB(127,127,127)
+    lighting.ExposureCompensation = 0
+    lighting.FogStart = 0
+    lighting.FogEnd = 100000
+    if lighting:FindFirstChild("Atmosphere") then
+        local atm = lighting.Atmosphere
+        atm.Density = 0.3
+        atm.Haze = 2
+    end
+end
+
+-- ==================== ESP ====================
+local ESPEnabled = false
+local ESPObjects = {}
+local espUpdateConnection = nil
+local function CreateESP(targetPlayer)
+    local char = targetPlayer.Character
+    if not char or not char:FindFirstChild("Head") then return nil end
+    local levelValue = "???"
+    local dataFolder = targetPlayer:FindFirstChild("Data")
+    if dataFolder and dataFolder:FindFirstChild("Level") then levelValue = tostring(dataFolder.Level.Value) end
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "YeoESP"
+    billboard.Adornee = char:FindFirstChild("Head")
+    billboard.Size = UDim2.new(0,150,0,60)
+    billboard.StudsOffset = Vector3.new(0,3,0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = char:FindFirstChild("Head")
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1,0,1,0)
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 14
+    label.TextColor3 = Color3.fromRGB(220,220,220)
+    label.TextStrokeTransparency = 0.5
+    label.Parent = billboard
+    local updateConnection = runService.RenderStepped:Connect(function()
+        if not billboard.Parent or not targetPlayer.Character or not lp.Character then
+            updateConnection:Disconnect()
+            return
+        end
+        local myChar = lp.Character
+        local targetChar = targetPlayer.Character
+        local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local targetHRP = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+        if myHRP and targetHRP then
+            local dist = math.floor((targetHRP.Position - myHRP.Position).Magnitude)
+            local newLevel = "???"
+            local dataFolder2 = targetPlayer:FindFirstChild("Data")
+            if dataFolder2 and dataFolder2:FindFirstChild("Level") then newLevel = tostring(dataFolder2.Level.Value) end
+            label.Text = targetPlayer.Name .. " [Lvl: " .. newLevel .. "]\n" .. dist .. "m"
+        end
+    end)
+    return billboard, updateConnection
+end
+local function ClearESP()
+    for _, obj in pairs(ESPObjects) do
+        if obj.billboard then obj.billboard:Destroy() end
+        if obj.updateConn then obj.updateConn:Disconnect() end
+    end
+    ESPObjects = {}
+end
+local function UpdateESP()
+    if not ESPEnabled then return end
+    for i, data in pairs(ESPObjects) do
+        local targetPlayer = data.player
+        if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("Head") then
+            if data.billboard then data.billboard:Destroy() end
+            if data.updateConn then data.updateConn:Disconnect() end
+            table.remove(ESPObjects, i)
+        end
+    end
+    for _, p in pairs(players:GetPlayers()) do
+        if p ~= lp and p.Character and p.Character:FindFirstChild("Head") then
+            local alreadyExists = false
+            for _, data in pairs(ESPObjects) do
+                if data.player == p then alreadyExists = true; break end
+            end
+            if not alreadyExists then
+                local billboard, updateConn = CreateESP(p)
+                if billboard then table.insert(ESPObjects, {player = p, billboard = billboard, updateConn = updateConn}) end
+            end
+        end
+    end
+end
+local function StartESPUpdater()
+    if espUpdateConnection then espUpdateConnection:Disconnect() end
+    espUpdateConnection = runService.RenderStepped:Connect(function() if ESPEnabled then UpdateESP() end end)
+end
+
+-- ==================== FAST ATTACK (SIN PAUSA) ====================
+local function StartFastAttack()
+    if FastAttackConnection then FastAttackConnection:Disconnect() end
+    FastAttackConnection = runService.RenderStepped:Connect(function()
+        if not FastAttackEnabled then
+            if FastAttackConnection then FastAttackConnection:Disconnect(); FastAttackConnection = nil end
+            return
+        end
+        pcall(function()
+            local myChar = lp.Character
+            local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myHRP then return end
+            local targets = {}
+            for _, player in pairs(players:GetPlayers()) do
+                if player ~= lp and player.Character then
+                    local hum = player.Character:FindFirstChild("Humanoid")
+                    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                    if hum and hrp and hum.Health > 0 and (hrp.Position - myHRP.Position).Magnitude <= FastAttackRange then
+                        table.insert(targets, player.Character)
+                    end
+                end
+            end
+            local enemies = workspace:FindFirstChild("Enemies")
+            if enemies then
+                for _, npc in pairs(enemies:GetChildren()) do
+                    local hum = npc:FindFirstChild("Humanoid")
+                    local hrp = npc:FindFirstChild("HumanoidRootPart")
+                    if hum and hrp and hum.Health > 0 and (hrp.Position - myHRP.Position).Magnitude <= FastAttackRange then
+                        table.insert(targets, npc)
+                    end
+                end
+            end
+            if #targets > 0 then
+                local allTargets = {}
+                for _, char in pairs(targets) do
+                    local head = char:FindFirstChild("Head")
+                    if head then table.insert(allTargets, {char, head}) end
+                end
+                if #allTargets > 0 then
+                    RegisterAttack:FireServer(0)
+                    RegisterHit:FireServer(allTargets[1][2], allTargets)
+                    local commF = replicatedStorage:FindFirstChild("Remotes") and replicatedStorage.Remotes:FindFirstChild("CommF_")
+                    if commF then commF:InvokeServer("CombatLog", allTargets[1][1]) end
+                end
+            end
+        end)
+    end)
+end
+
+-- ==================== V4 AUTO ====================
+local function StartV4Auto()
+    if V4Connection then V4Connection:Disconnect() end
+    V4Connection = runService.Heartbeat:Connect(function()
+        if not v4AutoEnabled then V4Connection:Disconnect(); V4Connection = nil return end
+        pcall(function()
+            local char = lp.Character
+            if char and char:FindFirstChild("Awakening") then
+                char.Awakening.RemoteFunction:InvokeServer(true)
+            elseif lp.Backpack:FindFirstChild("Awakening") then
+                lp.Backpack.Awakening.RemoteFunction:InvokeServer(true)
+            end
+        end)
+    end)
+end
+
+-- ==================== FRUIT AURA ====================
+local function StartFruitAura()
+    task.spawn(function()
+        while FruitAuraEnabled do
+            task.wait(0.15)
+            pcall(function()
+                local char = lp.Character
+                if not char then return end
+                local myHRP = char:FindFirstChild("HumanoidRootPart")
+                if not myHRP then return end
+                local bestTarget = nil
+                local bestDistance = math.huge
+                for _, player in pairs(players:GetPlayers()) do
+                    if player ~= lp and player.Character then
+                        local targetHRP = player.Character:FindFirstChild("HumanoidRootPart")
+                        local hum = player.Character:FindFirstChild("Humanoid")
+                        if targetHRP and hum and hum.Health > 0 then
+                            local dist = (targetHRP.Position - myHRP.Position).Magnitude
+                            if dist < bestDistance and dist <= AttackRange then
+                                bestDistance = dist
+                                bestTarget = player.Character
+                            end
+                        end
+                    end
+                end
+                if not bestTarget then
+                    local enemies = workspace:FindFirstChild("Enemies")
+                    if enemies then
+                        for _, npc in pairs(enemies:GetChildren()) do
+                            local targetHRP = npc:FindFirstChild("HumanoidRootPart")
+                            local hum = npc:FindFirstChild("Humanoid")
+                            if targetHRP and hum and hum.Health > 0 then
+                                local dist = (targetHRP.Position - myHRP.Position).Magnitude
+                                if dist < bestDistance and dist <= AttackRange then
+                                    bestDistance = dist
+                                    bestTarget = npc
+                                end
+                            end
+                        end
+                    end
+                end
+                if bestTarget then
+                    local targetHead = bestTarget:FindFirstChild("Head")
+                    if targetHead then
+                        local targets = { {bestTarget, targetHead} }
+                        RegisterAttack:FireServer(0)
+                        RegisterHit:FireServer(targetHead, targets)
+                        local commF = replicatedStorage:FindFirstChild("Remotes") and replicatedStorage.Remotes:FindFirstChild("CommF_")
+                        if commF then commF:InvokeServer("CombatLog", bestTarget) end
+                    end
+                end
+            end)
+        end
+    end)
+end
+
+-- ==================== NO ANIMATION ====================
+local function setupNoAnimation()
+    if noAnimationConnection then noAnimationConnection:Disconnect() end
+    noAnimationConnection = runService.RenderStepped:Connect(function()
+        local char = lp.Character
+        if not char or not noAnimationActive then return end
+        local hum = char:FindFirstChild("Humanoid")
+        if hum then for _, track in pairs(hum:GetPlayingAnimationTracks()) do track:Stop() end end
+    end)
+    local function onCharacterAdded(character)
+        local hum = character:WaitForChild("Humanoid")
+        hum.AnimationPlayed:Connect(function(animationTrack) if noAnimationActive then animationTrack:Stop() end end)
+    end
+    if lp.Character then onCharacterAdded(lp.Character) end
+    lp.CharacterAdded:Connect(onCharacterAdded)
+end
+
+-- ==================== MOVIMIENTO ====================
+local function applySpeed()
+    if speedEnabled and lp.Character and lp.Character:FindFirstChild("Humanoid") then
+        local hum = lp.Character.Humanoid
+        if hum.MoveDirection.Magnitude > 0 and currentSpeed > 0 then
+            lp.Character:TranslateBy(hum.MoveDirection * (currentSpeed / 55))
+        end
+    end
+end
+runService.Heartbeat:Connect(applySpeed)
+
+local function doSuperJump()
+    if superJumpEnabled and currentJumpPower > 0 and lp.Character and lp.Character:FindFirstChild("Humanoid") then
+        local hum = lp.Character.Humanoid
+        hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        local hrp = lp.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, currentJumpPower, hrp.AssemblyLinearVelocity.Z) end
+        return true
+    end
+    return false
+end
+userInputService.JumpRequest:Connect(function()
+    if doSuperJump() then return end
+    if iJ and lp.Character and lp.Character:FindFirstChild("Humanoid") then lp.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
+end)
+
+-- ==================== DASH LENGTH ====================
+local function applyDashLength()
+    if not dashLengthEnabled then return end
+    local char = lp.Character
+    if not char then return end
+    local valueToSet = math.clamp(dashLengthValue, 5, 300)
+    if valueToSet ~= dashLengthValue then dashLengthValue = valueToSet end
+    char:SetAttribute("DashLength", valueToSet)
+    char:SetAttribute("DashLengthAir", valueToSet)
+end
+local function startDashLengthLoop()
+    if dashLengthLoop then task.cancel(dashLengthLoop) end
+    dashLengthLoop = task.spawn(function()
+        while dashLengthEnabled do
+            applyDashLength()
+            task.wait(0.2)
+        end
+    end)
+end
+local function stopDashLengthLoop()
+    if dashLengthLoop then task.cancel(dashLengthLoop); dashLengthLoop = nil end
+    if lp.Character then
+        lp.Character:SetAttribute("DashLength", 1)
+        lp.Character:SetAttribute("DashLengthAir", 1)
+    end
+end
+lp.CharacterAdded:Connect(function(char) if dashLengthEnabled then task.wait(0.5); applyDashLength() end end)
+
+-- ==================== INTERFAZ PRINCIPAL ====================
+local pgui = lp:WaitForChild("PlayerGui")
+if pgui:FindFirstChild("YeoHub") then pgui.YeoHub:Destroy() end
+local screenGui = Instance.new("ScreenGui", pgui)
+screenGui.Name = "YeoHub"
+screenGui.ResetOnSpawn = false
+
+-- Botón Inf Nigga
+local infButton = nil
+local function createInfButton()
+    if infButton then return end
+    infButton = Instance.new("TextButton", screenGui)
+    infButton.Name = "InfNiggaBtn"
+    infButton.Size = UDim2.new(0, 50, 0, 50)
+    infButton.Position = UDim2.new(0, 100, 0.5, 0)
+    infButton.BackgroundColor3 = Color3.fromRGB(20,20,30)
+    infButton.BackgroundTransparency = 0.2
+    infButton.Text = "👾"
+    infButton.TextSize = 30
+    infButton.Font = Enum.Font.GothamBold
+    infButton.TextColor3 = Color3.fromRGB(255,255,255)
+    infButton.BorderSizePixel = 0
+    Instance.new("UICorner", infButton).CornerRadius = UDim.new(1,0)
+    local stroke = Instance.new("UIStroke", infButton)
+    stroke.Color = Color3.fromRGB(150,0,255)
+    stroke.Thickness = 2
+    infButton.Visible = false
+    local dragging = false
+    local dragStart, startPos
+    infButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = infButton.Position
+        end
+    end)
+    userInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            infButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    userInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    infButton.MouseButton1Click:Connect(function() task.spawn(RunHeadLockVoid) end)
+end
+createInfButton()
+local function setInfButtonVisible(visible) if infButton then infButton.Visible = visible end end
+
+-- Marco principal
+local mainFrame = Instance.new("Frame", screenGui)
+local normalSize, minimizedSize = UDim2.new(0, 420, 0, 400), UDim2.new(0, 150, 0, 35)
+mainFrame.Size = normalSize
+mainFrame.Position = UDim2.new(0.5, -210, 0.3, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.BackgroundTransparency = 0.4
+mainFrame.Active = true
+mainFrame.Draggable = true
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+local mainGradient = Instance.new("UIGradient", mainFrame)
+mainGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(40,40,40)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(20,20,20))
+})
+mainGradient.Rotation = 45
+local mainStroke = Instance.new("UIStroke", mainFrame)
+mainStroke.Color = Color3.fromRGB(70,70,75)
+mainStroke.Thickness = 2
+mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+-- Botón flotante Anti Nigga
+local function createFloatBtn(name, text, pos)
+    local b = Instance.new("TextButton", screenGui)
+    b.Name = name
+    b.Size = UDim2.new(0, 130, 0, 35)
+    b.Position = pos
+    b.BackgroundColor3 = Color3.fromRGB(45,45,45)
+    b.Text = text
+    b.TextColor3 = Color3.fromRGB(200,200,200)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 10
+    b.Visible = false
+    b.Active = true
+    b.Draggable = true
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+    local s = Instance.new("UIStroke", b)
+    s.Color = Color3.fromRGB(80,80,80)
+    s.Thickness = 1.5
+    return b, s
+end
+local floatAB, strokeAB = createFloatBtn("AntiBuddhaFloat", "ANTI NIGGA: OFF", UDim2.new(0, 20, 0, 20))
+local isUpLoopActive = false
+floatAB.MouseButton1Click:Connect(function()
+    local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local flag = hrp:FindFirstChild("UpLoop")
+    if flag then
+        flag:Destroy()
+        isUpLoopActive = false
+    else
+        isUpLoopActive = true
+        flag = Instance.new("BoolValue", hrp)
+        flag.Name = "UpLoop"
+        task.spawn(function()
+            while flag.Parent do
+                hrp.CFrame = hrp.CFrame * CFrame.new(0, 273861, 0)
+                task.wait(0.05)
+            end
+        end)
+    end
+    floatAB.Text = isUpLoopActive and "ANTI NIGGA: ON" or "ANTI NIGGA: OFF"
+    floatAB.TextColor3 = isUpLoopActive and Color3.fromRGB(255,255,255) or Color3.fromRGB(180,180,180)
+    strokeAB.Color = isUpLoopActive and Color3.fromRGB(200,200,200) or Color3.fromRGB(70,70,70)
+end)
+
+-- Pestañas
+local topBar = Instance.new("Frame", mainFrame)
+topBar.Size = UDim2.new(1, 0, 0, 45)
+topBar.BackgroundTransparency = 1
+local titleLabel = Instance.new("TextLabel", topBar)
+titleLabel.Size = UDim2.new(0.6, 0, 1, 0)
+titleLabel.Position = UDim2.new(0, 15, 0, 0)
+titleLabel.Text = "YEO HUB"
+titleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 18
+titleLabel.TextXAlignment = "Left"
+titleLabel.BackgroundTransparency = 1
+local closeBtn = Instance.new("TextButton", topBar)
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -40, 0, 7)
+closeBtn.Text = "×"
+closeBtn.TextSize = 20
+closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.BackgroundColor3 = Color3.fromRGB(150,40,40)
+Instance.new("UICorner", closeBtn)
+local maximizeBtn = Instance.new("TextButton", topBar)
+maximizeBtn.Size = UDim2.new(0, 30, 0, 30)
+maximizeBtn.Position = UDim2.new(1, -75, 0, 7)
+maximizeBtn.Text = "□"
+maximizeBtn.TextSize = 18
+maximizeBtn.TextColor3 = Color3.new(1,1,1)
+maximizeBtn.BackgroundColor3 = Color3.fromRGB(60,60,65)
+Instance.new("UICorner", maximizeBtn)
+local minimizeBtn = Instance.new("TextButton", topBar)
+minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+minimizeBtn.Position = UDim2.new(1, -110, 0, 7)
+minimizeBtn.Text = "-"
+minimizeBtn.TextSize = 22
+minimizeBtn.TextColor3 = Color3.new(1,1,1)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(60,60,65)
+Instance.new("UICorner", minimizeBtn)
+
+local tabContainer = Instance.new("ScrollingFrame", mainFrame)
+tabContainer.Size = UDim2.new(1, -20, 0, 40)
+tabContainer.Position = UDim2.new(0, 10, 0, 50)
+tabContainer.BackgroundTransparency = 1
+tabContainer.ScrollBarThickness = 0
 tabContainer.CanvasSize = UDim2.new(0,0,0,0)
 tabContainer.ScrollingDirection = Enum.ScrollingDirection.X
 tabContainer.AutomaticCanvasSize = Enum.AutomaticSize.X
@@ -1448,7 +1916,7 @@ addSwitch("Borrar estructura barco", confiPage, function(on)
             local exteriorNames = {"Wall", "Floor", "Ceiling", "Base", "Hull", "Window", "DoorFrame"}
             for _, obj in pairs(workspace:GetDescendants()) do
                 for _, name in pairs(shipNames) do
-                    if obj (name) and (obj:IsA("Model") or obj:IsA("Folder")) then
+                    if obj.Name:find(name) and (obj:IsA("Model") or obj:IsA("Folder")) then
                         for _, child in pairs(obj:GetDescendants()) do
                             if child:IsA("BasePart") and not child.Parent:FindFirstChild("Humanoid") then
                                 local isExterior = false
